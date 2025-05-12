@@ -18,7 +18,7 @@ def process_file(input_file, output_file):
             'Субъект': '',
             'Адрес': '',
             'ИНН участника': '',
-            'Регистрационный номер ККТ': '',
+            'Номер фискального накопителя': '',  # Изменено название поля
             'Товарная группа': ''
         }
 
@@ -31,23 +31,29 @@ def process_file(input_file, output_file):
                         'Субъект': row.get('Субъект', ''),
                         'Адрес': row.get('Адрес места фиксации отклонения', ''),
                         'ИНН участника': row.get('ИНН участника', ''),
-                        'Регистрационный номер ККТ': row.get('Регистрационный номер ККТ (из чека)', ''),
+                        'Номер фискального накопителя': row.get('Фискальный номер накопителя из чека операции', ''),
+                        # Берем из соответствующего поля
                         'Товарная группа': row.get('Товарная группа', '')
                     }
 
                 violation_type = row.get('Вид отклонения', '')
+                # Берем только текст после двоеточия в нарушении
+                violation_desc = violation_type.split(':')[-1].strip() if ':' in violation_type else violation_type
                 result = row.get('Результат проверки', '')
                 gtin = extract_gtin(row.get('GTIN', '').strip())
 
                 operation_datetime = row.get(
                     'Дата и время выполнения операции, в результате которой было выявлено отклонение', '')
                 try:
-                    date = datetime.strptime(operation_datetime, '%Y-%m-%d %H:%M:%S').date()
+                    dt = datetime.strptime(operation_datetime, '%Y-%m-%d %H:%M:%S')
+                    date = dt.date()
+                    time_str = dt.strftime('%H:%M')
                 except:
                     date = None
+                    time_str = ''
 
-                if violation_type and result and gtin and date:
-                    violations[(violation_type, result)].append((date, gtin))
+                if violation_desc and result and gtin and date:
+                    violations[(violation_desc, result)].append((date, time_str, gtin))
 
         # Генерируем отчет
         with open(output_file, mode='w', encoding='utf-8') as file:
@@ -63,13 +69,20 @@ def process_file(input_file, output_file):
             file.write("АНАЛИЗ НАРУШЕНИЙ\n")
             file.write("=" * 50 + "\n")
 
-            for (violation_type, result), records in violations.items():
-                file.write(f"\na) {violation_type}: {result}\n")
+            # Используем буквенные маркеры для каждого типа нарушения
+            markers = ['а)', 'б)', 'в)', 'г)', 'д)', 'е)', 'ж)', 'з)', 'и)', 'к)']
+            for i, ((violation_desc, result), records) in enumerate(violations.items()):
+                if i < len(markers):
+                    marker = markers[i]
+                else:
+                    marker = f"{i + 1})"
+
+                file.write(f"\n{marker} {violation_desc}\n")
 
                 # Собираем уникальные GTIN и даты
                 unique_gtins = set()
                 dates = []
-                for date, gtin in records:
+                for date, time_str, gtin in records:
                     unique_gtins.add(gtin)
                     dates.append(date)
 
@@ -82,8 +95,11 @@ def process_file(input_file, output_file):
                     date_range = "нет данных"
 
                 file.write(f" - Количество записей: {len(records)} случаев\n")
-                file.write(f" - Даты операций: {date_range}\n")
-                file.write(f" - GTIN: {' '.join(sorted(unique_gtins))}\n")
+                file.write(f" - Период нарушений: {date_range}\n")
+                file.write(f" - Уникальные штрих-коды (GTIN): {', '.join(sorted(unique_gtins))}\n")
+                file.write(f" - Подробная информация:\n")
+                for date, time_str, gtin in sorted(records):
+                    file.write(f"   * {date.strftime('%d.%m.%Y')} {time_str} - {gtin}\n")
 
             # 3. Общая статистика
             file.write("\n\n" + "=" * 50 + "\n")
@@ -91,16 +107,17 @@ def process_file(input_file, output_file):
             file.write("=" * 50 + "\n")
             file.write(f"- Всего нарушений: {sum(len(v) for v in violations.values())}\n")
             file.write(
-                f"- Уникальных GTIN: {len(set(gtin for records in violations.values() for _, gtin in records))}\n")
+                f"- Уникальных GTIN: {len(set(gtin for records in violations.values() for _, _, gtin in records))}\n")
             file.write(f"- Типов нарушений: {len(violations)}\n")
 
         return True
 
     except Exception as e:
-        messagebox.showerror("Ошибка", f"Произошла ошибка: {str(e)}")
+        messagebox.showerror("Ошибка", f"Ошибка обработки файла: {str(e)}")
         return False
 
 
+# Остальной код без изменений
 def center_window(window):
     """Центрирует окно на экране."""
     window.update_idletasks()
