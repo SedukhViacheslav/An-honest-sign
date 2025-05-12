@@ -2,6 +2,7 @@ import csv
 from collections import defaultdict
 from tkinter import Tk, Label, Frame, messagebox, filedialog
 from tkinter.ttk import Style, Button
+from datetime import datetime
 
 
 def extract_gtin(gtin):
@@ -10,49 +11,91 @@ def extract_gtin(gtin):
 
 
 def process_file(input_file, output_file):
-    """Обрабатывает CSV-файл и сохраняет дату, время, GTIN + статистику."""
+    """Обрабатывает CSV-файл и генерирует расширенный отчет."""
     try:
-        gtin_entries = []
-        gtin_counts = defaultdict(int)
-        total_gtins = 0
+        violations = defaultdict(list)
+        general_info = {
+            'Субъект': '',
+            'Адрес': '',
+            'ИНН участника': '',
+            'Регистрационный номер ККТ': '',
+            'Товарная группа': ''
+        }
 
         with open(input_file, mode='r', encoding='utf-8') as file:
             reader = csv.DictReader(file)
             for row in reader:
-                gtin = row.get('GTIN', '').strip()
-                if not gtin:
-                    continue
+                # Собираем общую информацию (возьмем из первой строки)
+                if not general_info['Субъект']:
+                    general_info = {
+                        'Субъект': row.get('Субъект', ''),
+                        'Адрес': row.get('Адрес места фиксации отклонения', ''),
+                        'ИНН участника': row.get('ИНН участника', ''),
+                        'Регистрационный номер ККТ': row.get('Регистрационный номер ККТ (из чека)', ''),
+                        'Товарная группа': row.get('Товарная группа', '')
+                    }
+
+                violation_type = row.get('Вид отклонения', '')
+                result = row.get('Результат проверки', '')
+                gtin = extract_gtin(row.get('GTIN', '').strip())
 
                 operation_datetime = row.get(
                     'Дата и время выполнения операции, в результате которой было выявлено отклонение', '')
-                if not operation_datetime:
-                    continue
+                try:
+                    date = datetime.strptime(operation_datetime, '%Y-%m-%d %H:%M:%S').date()
+                except:
+                    date = None
 
-                date, time = operation_datetime.split(' ') if ' ' in operation_datetime else ('', '')
-                cleaned_gtin = extract_gtin(gtin)
+                if violation_type and result and gtin and date:
+                    violations[(violation_type, result)].append((date, gtin))
 
-                gtin_entries.append((date, time, cleaned_gtin))
-                gtin_counts[cleaned_gtin] += 1
-                total_gtins += 1
-
-        sorted_gtins = sorted(gtin_counts.items(), key=lambda x: -x[1])
-
+        # Генерируем отчет
         with open(output_file, mode='w', encoding='utf-8') as file:
-            file.write("Дата       | Время   | Штрих-код\n")
-            file.write("--------------------------------\n")
-            for date, time, gtin in gtin_entries:
-                file.write(f"{date} | {time} | {gtin}\n")
+            # 1. Общие сведения
+            file.write("=" * 50 + "\n")
+            file.write("ОБЩИЕ СВЕДЕНИЯ\n")
+            file.write("=" * 50 + "\n")
+            for key, value in general_info.items():
+                file.write(f"- {key}: {value}\n")
 
-            file.write("\n\n=== Статистика GTIN ===\n")
-            file.write("Штрих-код   | Количество\n")
-            file.write("----------------------\n")
-            for gtin, count in sorted_gtins:
-                file.write(f"{gtin.ljust(12)} | {count}\n")
+            # 2. Типы нарушений
+            file.write("\n\n" + "=" * 50 + "\n")
+            file.write("АНАЛИЗ НАРУШЕНИЙ\n")
+            file.write("=" * 50 + "\n")
 
-            file.write(f"\nВсего GTIN: {total_gtins}\n")
-            file.write(f"Уникальных GTIN: {len(gtin_counts)}\n")
+            for (violation_type, result), records in violations.items():
+                file.write(f"\na) {violation_type}: {result}\n")
+
+                # Собираем уникальные GTIN и даты
+                unique_gtins = set()
+                dates = []
+                for date, gtin in records:
+                    unique_gtins.add(gtin)
+                    dates.append(date)
+
+                # Форматируем даты
+                if dates:
+                    min_date = min(dates)
+                    max_date = max(dates)
+                    date_range = f"{min_date.strftime('%d.%m.%Y')}-{max_date.strftime('%d.%m.%Y')}"
+                else:
+                    date_range = "нет данных"
+
+                file.write(f" - Количество записей: {len(records)} случаев\n")
+                file.write(f" - Даты операций: {date_range}\n")
+                file.write(f" - GTIN: {' '.join(sorted(unique_gtins))}\n")
+
+            # 3. Общая статистика
+            file.write("\n\n" + "=" * 50 + "\n")
+            file.write("ОБЩАЯ СТАТИСТИКА\n")
+            file.write("=" * 50 + "\n")
+            file.write(f"- Всего нарушений: {sum(len(v) for v in violations.values())}\n")
+            file.write(
+                f"- Уникальных GTIN: {len(set(gtin for records in violations.values() for _, gtin in records))}\n")
+            file.write(f"- Типов нарушений: {len(violations)}\n")
 
         return True
+
     except Exception as e:
         messagebox.showerror("Ошибка", f"Произошла ошибка: {str(e)}")
         return False
@@ -71,14 +114,14 @@ def center_window(window):
 def create_main_window():
     """Создаёт главное окно приложения."""
     root = Tk()
-    root.title("Анализатор GTIN")
+    root.title("Анализатор нарушений")
     root.configure(bg='#FFA500')  # Оранжевый фон
 
     # Стиль для кнопок
     style = Style()
     style.configure('TButton',
                     foreground='black',
-                    background='#4CAF50',  # Зелёный цвет кнопок
+                    background='#4CAF50',
                     font=('Arial', 10),
                     padding=5)
 
@@ -94,7 +137,7 @@ def create_main_window():
 
     # Кнопка выбора файла
     Button(frame,
-           text="Выбрать файл CSV",
+           text="Выбрать файл для анализа",
            command=lambda: select_and_process_file(root),
            style='TButton').pack(pady=10)
 
@@ -113,15 +156,15 @@ def select_and_process_file(root):
         return
 
     output_file = filedialog.asksaveasfilename(
-        title="Выберите место для сохранения результата",
+        title="Выберите место для сохранения отчета",
         defaultextension=".txt",
         filetypes=[("Text files", "*.txt"), ("All files", "*.*")],
-        initialfile="result.txt"
+        initialfile="Отчет_о_нарушениях.txt"
     )
 
     if output_file:
         if process_file(input_file, output_file):
-            messagebox.showinfo("Успех", f"Результат успешно сохранён в:\n{output_file}")
+            messagebox.showinfo("Успех", f"Отчет успешно сохранён в:\n{output_file}")
         root.destroy()
 
 
