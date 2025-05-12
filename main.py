@@ -3,11 +3,24 @@ from collections import defaultdict
 from tkinter import Tk, Label, Frame, messagebox, filedialog
 from tkinter.ttk import Style, Button
 from datetime import datetime
+import sys
+import os
 
 
 def extract_gtin(gtin):
     """Извлекает штрих-код, обрезая ведущие нули."""
     return gtin.lstrip('0') or '0'
+
+
+def resource_path(relative_path):
+    """ Получает абсолютный путь к ресурсу, работает для dev и для PyInstaller """
+    try:
+        # PyInstaller создает временную папку и хранит путь в _MEIPASS
+        base_path = sys._MEIPASS
+    except Exception:
+        base_path = os.path.abspath(".")
+
+    return os.path.join(base_path, relative_path)
 
 
 def process_file(input_file, output_file):
@@ -18,7 +31,7 @@ def process_file(input_file, output_file):
             'Субъект': '',
             'Адрес': '',
             'ИНН участника': '',
-            'Номер фискального накопителя': '',  # Изменено название поля
+            'Номер фискального накопителя': '',
             'Товарная группа': ''
         }
 
@@ -31,8 +44,8 @@ def process_file(input_file, output_file):
                         'Субъект': row.get('Субъект', ''),
                         'Адрес': row.get('Адрес места фиксации отклонения', ''),
                         'ИНН участника': row.get('ИНН участника', ''),
-                        'Номер фискального накопителя': row.get('Фискальный номер накопителя из чека операции', ''),
-                        # Берем из соответствующего поля
+                        'Номер фискального накопителя': row.get('Фискальный номер накопителя из чека операции',
+                                                                '') or row.get('Номер фискального накопителя', ''),
                         'Товарная группа': row.get('Товарная группа', '')
                     }
 
@@ -117,7 +130,6 @@ def process_file(input_file, output_file):
         return False
 
 
-# Остальной код без изменений
 def center_window(window):
     """Центрирует окно на экране."""
     window.update_idletasks()
@@ -133,6 +145,12 @@ def create_main_window():
     root = Tk()
     root.title("Анализатор нарушений")
     root.configure(bg='#FFA500')  # Оранжевый фон
+
+    # Иконка приложения
+    try:
+        root.iconbitmap(resource_path('icon.ico'))
+    except:
+        pass
 
     # Стиль для кнопок
     style = Style()
