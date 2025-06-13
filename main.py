@@ -54,6 +54,8 @@ def process_file(input_file, output_file):
                 violation_desc = violation_type.split(':')[-1].strip() if ':' in violation_type else violation_type
                 result = row.get('Результат проверки', '')
                 gtin = extract_gtin(row.get('GTIN', '').strip())
+                mark = row.get('Код', '').strip()
+                receipt_number = row.get('Номер документа', '').strip()
 
                 operation_datetime = row.get(
                     'Дата и время выполнения операции, в результате которой было выявлено отклонение', '')
@@ -66,7 +68,7 @@ def process_file(input_file, output_file):
                     time_str = ''
 
                 if violation_desc and result and gtin and date:
-                    violations[(violation_desc, result)].append((date, time_str, gtin))
+                    violations[(violation_desc, result)].append((date, time_str, gtin, mark, receipt_number))
 
         # Генерируем отчет
         with open(output_file, mode='w', encoding='utf-8') as file:
@@ -95,7 +97,7 @@ def process_file(input_file, output_file):
                 # Собираем уникальные GTIN и даты
                 unique_gtins = set()
                 dates = []
-                for date, time_str, gtin in records:
+                for date, time_str, gtin, mark, receipt_number in records:
                     unique_gtins.add(gtin)
                     dates.append(date)
 
@@ -111,8 +113,12 @@ def process_file(input_file, output_file):
                 file.write(f" - Период нарушений: {date_range}\n")
                 file.write(f" - Уникальные штрих-коды (GTIN): {', '.join(sorted(unique_gtins))}\n")
                 file.write(f" - Подробная информация:\n")
-                for date, time_str, gtin in sorted(records):
-                    file.write(f"   * {date.strftime('%d.%m.%Y')} {time_str} - {gtin}\n")
+                for date, time_str, gtin, mark, receipt_number in sorted(records):
+                    # Форматируем строку с выравниванием
+                    line = f"   * {date.strftime('%d.%m.%Y')} {time_str} - GTIN: {gtin.ljust(14)}"
+                    line += f"\tМаркировка: {mark.ljust(25)}"
+                    line += f"\tЧек №: {receipt_number}"
+                    file.write(line + "\n")
 
             # 3. Общая статистика
             file.write("\n\n" + "=" * 50 + "\n")
@@ -120,7 +126,7 @@ def process_file(input_file, output_file):
             file.write("=" * 50 + "\n")
             file.write(f"- Всего нарушений: {sum(len(v) for v in violations.values())}\n")
             file.write(
-                f"- Уникальных GTIN: {len(set(gtin for records in violations.values() for _, _, gtin in records))}\n")
+                f"- Уникальных GTIN: {len(set(gtin for records in violations.values() for _, _, gtin, _, _ in records))}\n")
             file.write(f"- Типов нарушений: {len(violations)}\n")
 
         return True
@@ -166,7 +172,7 @@ def create_main_window():
 
     # Информация о правообладателе
     Label(frame,
-          text="Правообладатель: Седых Вячеслав\nEmail: Sedukh@ya.ru",
+          text="Анализ ошибок ЧЗ v.3",
           bg='#FFA500',
           font=('Arial', 10)).pack(pady=10)
 
